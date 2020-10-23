@@ -87,9 +87,10 @@ combination_frame_melted$detector <- factor(combination_frame_melted$detector, l
 ```
 
 ```{r}
-ggplot() + theme_bw() + theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5)) +
+Combined_Nikon_FP_plot <- ggplot() + theme_bw() + theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5)) +
     scale_fill_continuous(low = "white", high = "black") +
     labs(x= "FP being used", y = "Filter cube") +
     geom_tile(data = combination_frame_melted, aes(x = variable, y = detector, fill = value))
+ggsave(file = "Plots/Combined_Nikon_FP_plot.png", Combined_Nikon_FP_plot, height = 3, width = 5)
 ```
 

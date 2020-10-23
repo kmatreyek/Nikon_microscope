@@ -6,25 +6,90 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+rm(list = ls())
+library(tidyverse)
+library(reshape)
+
+cubes <- c("Blue","Green","Red","NIR")
+
+excitation_filters <- data.frame("cube" = cubes, "excite_low" = c(350,440,540,590), "excite_high" = c(405,490,590,645))
+emission_filters <- data.frame("cube" = cubes, "emit_low" = c(410,500,600,660), "emit_high" = c(480,550,680,740))
+
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+```{r}
+nikon_fp_table <- function(input_string){
+  fp_file_location <- paste("Spectra/",input_string,".csv", sep = "")
+  excitation_name <- paste(input_string,".ex", sep = "")
+  emission_name <- paste(input_string,".em", sep = "")
+  
+  fp <- read.csv(file = fp_file_location, header = T, stringsAsFactors = F)
+  fp_excitation <- data.frame("cube" = excitation_filters$cube, "excite_low" = excitation_filters$excite_low, "excite_high" = excitation_filters$excite_high)
+  fp_excitation$efficiency <- 0
+  for(x in 1:nrow(fp_excitation)){
+    fp_excite_range <- seq(fp_excitation$excite_low[x],fp_excitation$excite_high[x],1)
+    if(min(fp_excite_range) %in% fp$wavelength & max(fp_excite_range) %in% fp$wavelength){
+    fp_excitation$efficiency[x] <- sum(fp[fp$wavelength %in% fp_excite_range,excitation_name])
+    } else{fp_excitation$efficiency[x] <- 0}
+  }
+  
+  fp_emission <- data.frame("cube" = emission_filters$cube,"emit_low" = emission_filters$emit_low,"emit_high" = emission_filters$emit_high)
+  for(x in 1:nrow(fp_emission)){
+    fp_emit_range <- seq(fp_emission$emit_low[x],fp_emission$emit_high[x],1)
+    
+    temp_vector <- fp[fp$wavelength >  emission_filters[emission_filters$emit_low == fp_emission$emit_low[x],"emit_low"] & fp$wavelength < emission_filters[emission_filters$emit_high == fp_emission$emit_high[x],"emit_high"],emission_name]
+    temp_vector[is.na(temp_vector)] <- 0
+    fp_emission$efficiency[x] <- sum(temp_vector)
+  }
+  
+  fp_output <- data.frame(matrix(ncol = nrow(fp_excitation), nrow = nrow(fp_emission)))
+  for(x in 1:ncol(fp_output)){
+    for(y in 1:nrow(fp_output)){
+      excitation_cube <- fp_excitation[x,"cube"]
+      emission_cube <- fp_emission[y,"cube"]
+      if(excitation_cube == emission_cube){
+        excitation_efficiency <- fp_excitation[x,"efficiency"]
+        emission_efficiency <- fp_emission[y,"efficiency"]
+        efficiency_product <- excitation_efficiency * emission_efficiency
+        fp_output[y,x] <- round(efficiency_product,2)
+      } else{fp_output[y,x] <- 0}
+    }
+  }
+  fp_output[is.na(fp_output)] <- 0
+  colnames(fp_output) <- excitation_filters$cube
+  rownames(fp_output) <- emission_filters$cube
+  
+  fp_output$detector <- rownames(fp_output)
+  fp_output_melted <- melt(fp_output, id = "detector")
+  
+  fp_output_melted_to_return <- fp_output_melted[c(1,6,11,16),c("detector","value")]
+  colnames(fp_output_melted_to_return) <- c("detector",input_string)
+  
+  return(fp_output_melted_to_return)
+}
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+```{r }
+combination_frame <- data.frame("detector" = cubes)
+combination_frame <- merge(combination_frame, nikon_fp_table("mTagBFP2"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("EGFP"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("UnaG"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("mNeonGreen"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("mScarlet.I"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("mCherry"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("iRFP670"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("miRFP670"), by = "detector")
+combination_frame <- merge(combination_frame, nikon_fp_table("TDsmURFP"), by = "detector")
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+combination_frame_melted <- melt(combination_frame, id = "detector")
+combination_frame_melted$detector <- factor(combination_frame_melted$detector, levels = cubes)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+ggplot() + theme_bw() + theme(axis.text.x = element_text(angle = -90, hjust = 0, vjust = 0.5)) +
+    scale_fill_continuous(low = "white", high = "black") +
+    labs(x= "FP being used", y = "Filter cube") +
+    geom_tile(data = combination_frame_melted, aes(x = variable, y = detector, fill = value))
+```
+
